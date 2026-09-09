@@ -9,109 +9,6 @@
 #endif
 #include <cstdint>
 #include <inttypes.h>
-
-// Hoisted: a preprocessor directive inside a macro argument is undefined
-// behaviour, accepted by GCC and Clang but rejected by MSVC.
-#if USE_ATOMIC_OPS
-#  define RVA_GUARDED_0 \
-			return std::atomic_ref(value).fetch_add(proc.reg(rs2));
-#else
-#  define RVA_GUARDED_0 \
-			auto old_value = value; \
-			value += proc.reg(rs2); \
-			return old_value;
-#endif
-
-#if USE_ATOMIC_OPS
-#  define RVA_GUARDED_1 \
-			return std::atomic_ref(value).fetch_xor(proc.reg(rs2));
-#else
-#  define RVA_GUARDED_1 \
-			auto old_value = value; \
-			value ^= proc.reg(rs2); \
-			return old_value;
-#endif
-
-#if USE_ATOMIC_OPS
-#  define RVA_GUARDED_2 \
-			return std::atomic_ref(value).fetch_or(proc.reg(rs2));
-#else
-#  define RVA_GUARDED_2 \
-			auto old_value = value; \
-			value |= proc.reg(rs2); \
-			return old_value;
-#endif
-
-#if USE_ATOMIC_OPS
-#  define RVA_GUARDED_3 \
-			return std::atomic_ref(value).fetch_and(proc.reg(rs2));
-#else
-#  define RVA_GUARDED_3 \
-			auto old_value = value; \
-			value &= proc.reg(rs2); \
-			return old_value;
-#endif
-
-#if USE_ATOMIC_OPS
-#  define RVA_GUARDED_4 \
-			return std::atomic_ref(value).fetch_add(proc.reg(rs2));
-#else
-#  define RVA_GUARDED_4 \
-			auto old_value = value; \
-			value += proc.reg(rs2); \
-			return old_value;
-#endif
-
-#if USE_ATOMIC_OPS
-#  define RVA_GUARDED_5 \
-			return std::atomic_ref(value).fetch_xor(proc.reg(rs2));
-#else
-#  define RVA_GUARDED_5 \
-			auto old_value = value; \
-			value ^= proc.reg(rs2); \
-			return old_value;
-#endif
-
-#if USE_ATOMIC_OPS
-#  define RVA_GUARDED_6 \
-			return std::atomic_ref(value).fetch_or(proc.reg(rs2));
-#else
-#  define RVA_GUARDED_6 \
-			auto old_value = value; \
-			value |= proc.reg(rs2); \
-			return old_value;
-#endif
-
-#if USE_ATOMIC_OPS
-#  define RVA_GUARDED_7 \
-			return std::atomic_ref(value).fetch_and(proc.reg(rs2));
-#else
-#  define RVA_GUARDED_7 \
-			auto old_value = value; \
-			value &= proc.reg(rs2); \
-			return old_value;
-#endif
-
-#if USE_ATOMIC_OPS
-#  define RVA_GUARDED_8 \
-			return std::atomic_ref(value).exchange(proc.reg(rs2));
-#else
-#  define RVA_GUARDED_8 \
-			auto old_value = value; \
-			value = proc.reg(rs2); \
-			return old_value;
-#endif
-
-#if USE_ATOMIC_OPS
-#  define RVA_GUARDED_9 \
-			return std::atomic_ref(value).exchange(proc.reg(rs2));
-#else
-#  define RVA_GUARDED_9 \
-			auto old_value = value; \
-			value = proc.reg(rs2); \
-			return old_value;
-#endif
-
 static const char atomic_type[] { '?', '?', 'W', 'D', 'Q', '?', '?', '?' };
 static const char* atomic_name2[] {
 	"AMOADD", "AMOXOR", "AMOOR", "AMOAND", "AMOMIN", "AMOMAX", "AMOMINU", "AMOMAXU"
@@ -155,7 +52,13 @@ namespace riscv
 	{
 		cpu.template amo<int32_t>(instr,
 		[] (auto& proc, auto& value, auto rs2) {
-			RVA_GUARDED_0
+#if USE_ATOMIC_OPS
+			return std::atomic_ref(value).fetch_add(proc.reg(rs2));
+#else
+			auto old_value = value;
+			value += proc.reg(rs2);
+			return old_value;
+#endif
 		});
 	},
 	[] (char* buffer, size_t len, auto&, rv32i_instruction instr) RVPRINTR_ATTR {
@@ -172,7 +75,13 @@ namespace riscv
 	{
 		cpu.template amo<int32_t>(instr,
 		[] (auto& proc, auto& value, auto rs2) {
-			RVA_GUARDED_1
+#if USE_ATOMIC_OPS
+			return std::atomic_ref(value).fetch_xor(proc.reg(rs2));
+#else
+			auto old_value = value;
+			value ^= proc.reg(rs2);
+			return old_value;
+#endif
 		});
 	}, DECODED_ATOMIC(AMOADD_W).printer);
 
@@ -181,7 +90,13 @@ namespace riscv
 	{
 		cpu.template amo<int32_t>(instr,
 		[] (auto& proc, auto& value, auto rs2) {
-			RVA_GUARDED_2
+#if USE_ATOMIC_OPS
+			return std::atomic_ref(value).fetch_or(proc.reg(rs2));
+#else
+			auto old_value = value;
+			value |= proc.reg(rs2);
+			return old_value;
+#endif
 		});
 	}, DECODED_ATOMIC(AMOADD_W).printer);
 
@@ -190,7 +105,13 @@ namespace riscv
 	{
 		cpu.template amo<int32_t>(instr,
 		[] (auto& proc, auto& value, auto rs2) {
-			RVA_GUARDED_3
+#if USE_ATOMIC_OPS
+			return std::atomic_ref(value).fetch_and(proc.reg(rs2));
+#else
+			auto old_value = value;
+			value &= proc.reg(rs2);
+			return old_value;
+#endif
 		});
 	}, DECODED_ATOMIC(AMOADD_W).printer);
 
@@ -243,7 +164,13 @@ namespace riscv
 	{
 		cpu.template amo<int64_t>(instr,
 		[] (auto& proc, auto& value, auto rs2) {
-			RVA_GUARDED_4
+#if USE_ATOMIC_OPS
+			return std::atomic_ref(value).fetch_add(proc.reg(rs2));
+#else
+			auto old_value = value;
+			value += proc.reg(rs2);
+			return old_value;
+#endif
 		});
 	}, DECODED_ATOMIC(AMOADD_W).printer);
 
@@ -252,7 +179,13 @@ namespace riscv
 	{
 		cpu.template amo<int64_t>(instr,
 		[] (auto& proc, auto& value, auto rs2) {
-			RVA_GUARDED_5
+#if USE_ATOMIC_OPS
+			return std::atomic_ref(value).fetch_xor(proc.reg(rs2));
+#else
+			auto old_value = value;
+			value ^= proc.reg(rs2);
+			return old_value;
+#endif
 		});
 	}, DECODED_ATOMIC(AMOADD_W).printer);
 
@@ -261,7 +194,13 @@ namespace riscv
 	{
 		cpu.template amo<int64_t>(instr,
 		[] (auto& proc, auto& value, auto rs2) {
-			RVA_GUARDED_6
+#if USE_ATOMIC_OPS
+			return std::atomic_ref(value).fetch_or(proc.reg(rs2));
+#else
+			auto old_value = value;
+			value |= proc.reg(rs2);
+			return old_value;
+#endif
 		});
 	}, DECODED_ATOMIC(AMOADD_W).printer);
 
@@ -270,7 +209,13 @@ namespace riscv
 	{
 		cpu.template amo<int64_t>(instr,
 		[] (auto& proc, auto& value, auto rs2) {
-			RVA_GUARDED_7
+#if USE_ATOMIC_OPS
+			return std::atomic_ref(value).fetch_and(proc.reg(rs2));
+#else
+			auto old_value = value;
+			value &= proc.reg(rs2);
+			return old_value;
+#endif
 		});
 	}, DECODED_ATOMIC(AMOADD_W).printer);
 
@@ -323,7 +268,13 @@ namespace riscv
 	{
 		cpu.template amo<int32_t>(instr,
 		[] (auto& proc, auto& value, auto rs2) {
-			RVA_GUARDED_8
+#if USE_ATOMIC_OPS
+			return std::atomic_ref(value).exchange(proc.reg(rs2));
+#else
+			auto old_value = value;
+			value = proc.reg(rs2);
+			return old_value;
+#endif
 		});
 	},
 	[] (char* buffer, size_t len, auto&, rv32i_instruction instr) RVPRINTR_ATTR {
@@ -339,7 +290,13 @@ namespace riscv
 	{
 		cpu.template amo<int64_t>(instr,
 		[] (auto& proc, auto& value, auto rs2) {
-			RVA_GUARDED_9
+#if USE_ATOMIC_OPS
+			return std::atomic_ref(value).exchange(proc.reg(rs2));
+#else
+			auto old_value = value;
+			value = proc.reg(rs2);
+			return old_value;
+#endif
 		});
 	}, DECODED_ATOMIC(AMOSWAP_W).printer);
 

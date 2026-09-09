@@ -10,67 +10,6 @@
 #include <inttypes.h>
 #ifdef _MSC_VER
 #include <intrin.h>
-
-
-#endif
-
-// Hoisted: a preprocessor directive inside a macro argument is undefined
-// behaviour, accepted by GCC and Clang but rejected by MSVC.
-#ifdef RISCV_HAS_BITOPS
-#  define RVI_GUARDED_0 \
-				dst = std::countl_zero(src);
-#else
-#  define RVI_GUARDED_0 \
-				if constexpr (RVIS32BIT(cpu)) \
-					dst = src ? __builtin_clz(src) : RVXLEN(cpu); \
-				else \
-					dst = src ? __builtin_clzl(src) : RVXLEN(cpu);
-#endif
-
-#ifdef RISCV_HAS_BITOPS
-#  define RVI_GUARDED_1 \
-				dst = std::countr_zero(src);
-#else
-#  define RVI_GUARDED_1 \
-				if constexpr (RVIS32BIT(cpu)) \
-					dst = src ? __builtin_ctz(src) : 0; \
-				else \
-					dst = src ? __builtin_ctzl(src) : 0;
-#endif
-
-#ifdef RISCV_HAS_BITOPS
-#  define RVI_GUARDED_2 \
-				dst = std::popcount(src);
-#else
-#  define RVI_GUARDED_2 \
-				if constexpr (RVIS32BIT(cpu)) \
-					dst = __builtin_popcount(src); \
-				else \
-					dst = __builtin_popcountl(src);
-#endif
-
-#ifdef RISCV_HAS_BITOPS
-#  define RVI_GUARDED_3 \
-				dst = std::countl_zero(src);
-#else
-#  define RVI_GUARDED_3 \
-				dst = src ? __builtin_clz(src) : RVXLEN(cpu);
-#endif
-
-#ifdef RISCV_HAS_BITOPS
-#  define RVI_GUARDED_4 \
-				dst = std::countr_zero(src);
-#else
-#  define RVI_GUARDED_4 \
-				dst = src ? __builtin_ctz(src) : 0;
-#endif
-
-#ifdef RISCV_HAS_BITOPS
-#  define RVI_GUARDED_5 \
-				dst = std::popcount(src);
-#else
-#  define RVI_GUARDED_5 \
-				dst = __builtin_popcount(src);
 #endif
 
 namespace riscv
@@ -308,8 +247,7 @@ static inline uint64_t MUL128(
 
 #define VERBOSE_BRANCH() \
 	if constexpr (verbose_branches_enabled) { \
-		printf(">>> BRANCH jump to 0x%" PRIX64 "\
-", uint64_t(cpu.pc() + 4)); \
+		printf(">>> BRANCH jump to 0x%" PRIX64 "\n", uint64_t(cpu.pc() + 4)); \
 	}
 
 	INSTRUCTION(BRANCH_EQ,
@@ -405,8 +343,7 @@ static inline uint64_t MUL128(
 		}
 		cpu.jump(address - 4);
 		if constexpr (verbose_branches_enabled) {
-		printf(">>> JMP 0x%" PRIX64 " <-- %s = 0x%" PRIX64 "%+d\
-",
+		printf(">>> JMP 0x%" PRIX64 " <-- %s = 0x%" PRIX64 "%+d\n",
 				uint64_t(address),
 				RISCV::regname(instr.Itype.rs1),
 				uint64_t(cpu.reg(instr.Itype.rs1)),
@@ -429,8 +366,7 @@ static inline uint64_t MUL128(
 		// And jump relative
 		cpu.jump(cpu.pc() + instr.Jtype.jump_offset() - 4);
 		if constexpr (verbose_branches_enabled) {
-			printf(">>> CALL 0x%" PRIX64 " <-- %s = 0x%" PRIX64 "\
-",
+			printf(">>> CALL 0x%" PRIX64 " <-- %s = 0x%" PRIX64 "\n",
 					uint64_t(cpu.pc()),
 					RISCV::regname(instr.Jtype.rd),
 					uint64_t(cpu.reg(instr.Jtype.rd)));
@@ -452,8 +388,7 @@ static inline uint64_t MUL128(
 		// Jump relative
 		cpu.jump(cpu.pc() + instr.Jtype.jump_offset() - 4);
 		if constexpr (verbose_branches_enabled) {
-			printf(">>> JMP 0x%" PRIX64 " <-- %s = 0x%" PRIX64 "\
-",
+			printf(">>> JMP 0x%" PRIX64 " <-- %s = 0x%" PRIX64 "\n",
 					uint64_t(cpu.pc()),
 					RISCV::regname(instr.Jtype.rd),
 					uint64_t(cpu.reg(instr.Jtype.rd)));
@@ -475,13 +410,34 @@ static inline uint64_t MUL128(
 				dst = RVSIGNTYPE(cpu)(int16_t(src));
 				return;
 			case 0b011000000000: // CLZ
-			RVI_GUARDED_0
+#ifdef RISCV_HAS_BITOPS
+				dst = std::countl_zero(src);
+#else
+				if constexpr (RVIS32BIT(cpu))
+					dst = src ? __builtin_clz(src) : RVXLEN(cpu);
+				else
+					dst = src ? __builtin_clzl(src) : RVXLEN(cpu);
+#endif
 				return;
 			case 0b011000000001: // CTZ
-			RVI_GUARDED_1
+#ifdef RISCV_HAS_BITOPS
+				dst = std::countr_zero(src);
+#else
+				if constexpr (RVIS32BIT(cpu))
+					dst = src ? __builtin_ctz(src) : 0;
+				else
+					dst = src ? __builtin_ctzl(src) : 0;
+#endif
 				return;
 			case 0b011000000010: // CPOP
-			RVI_GUARDED_2
+#ifdef RISCV_HAS_BITOPS
+				dst = std::popcount(src);
+#else
+				if constexpr (RVIS32BIT(cpu))
+					dst = __builtin_popcount(src);
+				else
+					dst = __builtin_popcountl(src);
+#endif
 				return;
 			default:
 				if (instr.Itype.high_bits() == 0x280) {
@@ -1072,13 +1028,25 @@ static inline uint64_t MUL128(
 		case 0x1:
 			switch (instr.Itype.imm) {
 			case 0b011000000000: // CLZ.W
-			RVI_GUARDED_3
+#ifdef RISCV_HAS_BITOPS
+				dst = std::countl_zero(src);
+#else
+				dst = src ? __builtin_clz(src) : RVXLEN(cpu);
+#endif
 				return;
 			case 0b011000000001: // CTZ.W
-			RVI_GUARDED_4
+#ifdef RISCV_HAS_BITOPS
+				dst = std::countr_zero(src);
+#else
+				dst = src ? __builtin_ctz(src) : 0;
+#endif
 				return;
 			case 0b011000000010: // CPOP.W
-			RVI_GUARDED_5
+#ifdef RISCV_HAS_BITOPS
+				dst = std::popcount(src);
+#else
+				dst = __builtin_popcount(src);
+#endif
 				return;
 			}
 			break;
