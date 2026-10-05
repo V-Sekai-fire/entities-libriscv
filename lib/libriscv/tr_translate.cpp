@@ -1266,10 +1266,18 @@ void CPU<W>::activate_dylib(const MachineOptions<W>& options, DecodedExecuteSegm
 	const uint32_t* no_handlers = (const uint32_t *)dylib_lookup(dylib, "no_handlers", is_libtcc);
 	const auto* handlers = (const bintr_block_func<W> *)dylib_lookup(dylib, "unique_mappings", is_libtcc);
 
-	if (no_mappings == nullptr || mappings == nullptr || *no_mappings > 500000UL) {
+	// A mapping names a distinct instruction address, so the segment bounds how many there can be.
+	const uint64_t max_mappings = uint64_t(exec.exec_end() - exec.exec_begin()) / (compressed_enabled ? 2 : 4);
+	if (no_mappings == nullptr || mappings == nullptr || no_handlers == nullptr || handlers == nullptr
+		|| *no_mappings > max_mappings) {
+		// Refuse the library and keep interpreting, as for a missing init().
+		if (options.verbose_loader) {
+			fprintf(stderr, "libriscv: Invalid mappings in binary translation program\n");
+		}
 		dylib_close(dylib, is_libtcc);
 		exec.set_binary_translated(nullptr, false);
-		throw MachineException(INVALID_PROGRAM, "Invalid mappings in binary translation program");
+		exec.set_background_compiling(false);
+		return;
 	}
 
 	// After this, we should automatically close the dylib on destruction
