@@ -14,6 +14,11 @@ namespace riscv
 		std::unordered_map<std::string, std::string> defines;
 		timespec t0;
 		std::shared_ptr<std::string> code;
+		// Offsets into code: where the shared prelude ends, then where each block ends.
+		size_t prelude_end = 0;
+		std::vector<size_t> block_ends;
+		// The handler functions the footer names, in footer order.
+		std::vector<std::string> handler_symbols;
 		std::string footer;
 		std::vector<TransMapping<W>> mappings;
 	};
@@ -32,12 +37,13 @@ namespace riscv
 		bool ignore_instruction_limit;
 		bool use_shared_execute_segments;
 		bool use_register_caching;
-		bool use_syscall_clobbering_optimization;
 		bool use_automatic_nbit_address_space;
 		bool use_virtual_paging_fallback;
 		bool unsafe_remove_checks;
 		std::unordered_set<address_type<W>> jump_locations;
-		std::unordered_map<address_type<W>, address_type<W>> single_return_locations;
+		// Return addresses of every direct call site, keyed by callee. Shared by
+		// all blocks, and complete by the time any block is emitted.
+		const std::unordered_map<address_type<W>, std::vector<address_type<W>>>& return_locations;
 		// Pointer to all the other blocks (including current)
 		std::vector<TransInfo<W>>* blocks = nullptr;
 		// Pointer to list of ebreak-locations
