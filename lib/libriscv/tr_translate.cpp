@@ -253,6 +253,56 @@ namespace riscv
 		return source;
 	}
 
+	// Split a translation into units of about equal code size: each unit is the
+	// defines, RISCV_TRANSLATION_UNIT, the shared prelude and a contiguous run of
+	// blocks; unit 0 also carries the footer (the mappings). A block is never split,
+	// and no unit is empty unless there are fewer blocks than units.
+	template <int W>
+	static void split_shared_c99(const TransOutput<W>& output, unsigned units,
+		std::vector<std::string>& result)
+	{
+		const std::string& code = *output.code;
+		const std::string head = defines_to_c99(output.defines);
+		const std::string_view prelude(code.data(), output.prelude_end);
+		const size_t nblocks = output.block_ends.size();
+		units = std::max(1u, unsigned(std::min<size_t>(units, std::max<size_t>(nblocks, 1))));
+		const size_t body = code.size() - output.prelude_end;
+
+		result.clear();
+		result.reserve(units);
+		size_t begin = output.prelude_end;
+		size_t block = 0;
+		for (unsigned u = 0; u < units; u++) {
+			size_t end = begin;
+			if (u + 1 == units) {
+				end = code.size();
+				block = nblocks;
+			} else {
+				// Take blocks until this unit holds its share of the body.
+				const size_t target = output.prelude_end + body * (u + 1) / units;
+				while (block < nblocks && (end == begin || output.block_ends[block] <= target)
+					&& nblocks - block > units - u - 1) {
+					end = output.block_ends[block++];
+				}
+			}
+			std::string unit;
+			unit.reserve(head.size() + prelude.size() + (end - begin) + (u == 0 ? output.footer.size() : 0) + 64);
+			unit += head;
+			unit += "#define RISCV_TRANSLATION_UNIT " + std::to_string(u) + "\n";
+			unit.append(prelude);
+			unit.append(code, begin, end - begin);
+			if (u == 0)
+			{
+				// The mappings name every handler, most of them defined in other units.
+				for (const auto& sym : output.handler_symbols)
+					unit += "BINTR_FUNC ReturnValues " + sym + "(CPU*, uint64_t, uint64_t, addr_t);\n";
+				unit += output.footer;
+			}
+			result.push_back(std::move(unit));
+			begin = end;
+		}
+	}
+
 	// Set BINTR_DUMP=<path> to write the emitted C to a file.
 	// The defines are written as a leading comment so the dump can be recompiled
 	// standalone with the same flags the translator used.
@@ -892,11 +942,14 @@ if constexpr (SCAN_FOR_GP) {
 #ifdef RISCV_EXT_VECTOR
 	*output.code += VectorLayoutProbe::layout_checks<W>();
 #endif
+	output.prelude_end = output.code->size();
+	output.block_ends.reserve(blocks.size());
 
 	for (auto& block : blocks)
 	{
 		block.blocks = &blocks;
 		auto result = emit(*output.code, block);
+		output.block_ends.push_back(output.code->size());
 
 		for (auto& mapping : result) {
 			dlmappings.push_back(std::move(mapping));
@@ -947,6 +1000,7 @@ VISIBLE const struct Mapping mappings[] = {
 		throw MachineException(INVALID_PROGRAM, "Mismatch in unique mappings");
 	for (auto* handler : handlers) {
 		footer += "    " + *handler + ",\n";
+		output.handler_symbols.push_back(*handler);
 	}
 	footer += "};\n";
 
@@ -1127,10 +1181,15 @@ void CPU<W>::try_translate(const MachineOptions<W>& options, const std::string& 
 						embed.result_shared_c99->append(*output.code);
 						embed.result_shared_c99->append(output.footer);
 					}
+					if (embed.result_shared_c99_units != nullptr) {
+						split_shared_c99(output, std::max(1u, embed.shared_c99_units),
+							*embed.result_shared_c99_units);
+					}
 					// Preserve the legacy filename behavior when no string result was
 					// requested, while allowing shared-source-only callers to avoid an
 					// unwanted embeddable file.
-					if (embed.result_c99 != nullptr || embed.result_shared_c99 == nullptr) {
+					if (embed.result_c99 != nullptr
+						|| (embed.result_shared_c99 == nullptr && embed.result_shared_c99_units == nullptr)) {
 						produce_embeddable_code(options, *shared_segment, output, embed);
 					}
 				}

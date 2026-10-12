@@ -83,6 +83,16 @@ namespace riscv
 		/// @details The returned source includes every required preprocessor define
 		/// and exports init/mappings symbols for CPU::load_translation().
 		std::string* result_shared_c99 = nullptr;
+
+		/// @brief An optional vector for the shared library variant split into units.
+		/// @details Each string is one C translation unit with every required define.
+		/// Compiled separately (in parallel) and linked into one shared library, they
+		/// load exactly as result_shared_c99 does. Unit 0 holds init() and the mappings.
+		/// A large guest is otherwise one unit that a C compiler takes on one core.
+		std::vector<std::string>* result_shared_c99_units = nullptr;
+		/// @brief The number of units for result_shared_c99_units (at least 1). Blocks
+		/// are split into contiguous runs of about equal code size.
+		unsigned shared_c99_units = 8;
 	};
 	using MachineTranslationOptions = std::variant<MachineTranslationCrossOptions, MachineTranslationEmbeddableCodeOptions>;
 

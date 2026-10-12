@@ -3637,11 +3637,11 @@ CPU<W>::emit(std::string& code, const TransInfo<W>& tinfo)
 
 	// Forward declarations
 	for (const auto& entry : e.get_forward_declared()) {
-		code += "static ReturnValues " + entry + "(CPU*, uint64_t, uint64_t, addr_t);\n";
+		code += "BINTR_FUNC ReturnValues " + entry + "(CPU*, uint64_t, uint64_t, addr_t);\n";
 	}
 
 	// Function header
-	code += "static ReturnValues " + e.get_func() + "(CPU* RESTRICT cpu, uint64_t ic, uint64_t max_ic, addr_t pc) {\n";
+	code += "BINTR_FUNC ReturnValues " + e.get_func() + "(CPU* RESTRICT cpu, uint64_t ic, uint64_t max_ic, addr_t pc) {\n";
 	// NOTE: Scratch shared by every exit point, see RETURN_VALUES
 	code += "ReturnValues retvals;\n";
 	if (e.used_fixed_store())

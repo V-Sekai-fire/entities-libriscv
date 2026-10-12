@@ -72,6 +72,24 @@ typedef uint64_t MAY_ALIAS ga_uint64_t;
 #define VISIBLE  __attribute__((visibility("default")))
 #define INTERNAL __attribute__((visibility("hidden")))
 
+/* A translation is one C unit unless the translator splits it (result_shared_c99_units):
+   then each unit defines RISCV_TRANSLATION_UNIT, unit 0 owns the shared state, init()
+   and the footer, and every function has hidden external linkage so that one unit
+   can call into another. Unsplit, all of it stays static, as before. */
+#ifndef RISCV_TRANSLATION_UNIT
+#  define BINTR_STATE INTERNAL static
+#  define BINTR_FUNC  static
+#  define BINTR_OWNS_STATE 1
+#elif RISCV_TRANSLATION_UNIT == 0
+#  define BINTR_STATE INTERNAL
+#  define BINTR_FUNC  INTERNAL
+#  define BINTR_OWNS_STATE 1
+#else
+#  define BINTR_STATE extern INTERNAL
+#  define BINTR_FUNC  INTERNAL
+#  define BINTR_OWNS_STATE 0
+#endif
+
 #if RISCV_TRANSLATION_DYLIB == 4
 	typedef uint32_t addr_t;
 	typedef int32_t saddr_t;
@@ -361,7 +379,7 @@ typedef struct {
 typedef void (*syscall_t) (CPU*);
 typedef void (*handler) (CPU*, uint32_t);
 
-static struct CallbackTable {
+BINTR_STATE struct CallbackTable {
 	uint8_t (*mem_ld8) (const CPU*, addr_t);
 	uint16_t (*mem_ld16) (const CPU*, addr_t);
 	uint32_t (*mem_ld32) (const CPU*, addr_t);
@@ -409,7 +427,7 @@ static struct CallbackTable {
 #define ARENA_READABLE(x) ((x) - 0x1000 < ARENA_READ_BOUNDARY)
 #define ARENA_WRITABLE(x) ((x) - RISCV_ARENA_ROEND < ARENA_WRITE_BOUNDARY)
 
-INTERNAL static int32_t arena_offset;
+BINTR_STATE int32_t arena_offset;
 //#define ARENA_AT(cpu, x)  (arena_ptr + (x))
 #ifdef RISCV_ARENA_OFFSET
 // The offset of the arena pointer inside the machine is fixed, so the translator
@@ -418,13 +436,15 @@ INTERNAL static int32_t arena_offset;
 // The offset is part of the translation hash, so a cached or embedded object
 // built against a different machine layout is already rejected by hash; this
 // symbol lets the loader verify it directly rather than rely on that.
+#if BINTR_OWNS_STATE
 VISIBLE const int32_t arena_offset_constant = RISCV_ARENA_OFFSET;
+#endif
 #define ARENA_AT(cpu, x)  (*(char **)((char *)(cpu) + RISCV_ARENA_OFFSET) + (x))
 #else
 #define ARENA_AT(cpu, x)  (*(char **)((char *)(cpu) + arena_offset) + (x))
 #endif
 
-INTERNAL static int32_t ic_offset;
+BINTR_STATE int32_t ic_offset;
 #define INS_COUNTER(cpu) (*(uint64_t *)((char *)(cpu) + ic_offset))
 #define MAX_COUNTER(cpu) (*(uint64_t *)((char *)(cpu) + ic_offset + 8))
 
@@ -432,7 +452,7 @@ typedef struct {
 	addr_t pageno;
 	uint8_t *data;
 } CachedPage;
-INTERNAL static int32_t rdcache_offset;
+BINTR_STATE int32_t rdcache_offset;
 #define RD_CACHE(cpu) ((CachedPage *)((char *)(cpu) + rdcache_offset))
 #define WR_CACHE(cpu) ((CachedPage *)((char *)(cpu) + rdcache_offset + sizeof(CachedPage)))
 
@@ -553,6 +573,7 @@ static inline uint64_t MUL128(
 	return (middle << 32) | (uint32_t)p00;
 }
 
+#if BINTR_OWNS_STATE
 #ifdef EMBEDDABLE_CODE
 static
 #else
@@ -566,6 +587,7 @@ void init(struct CallbackTable* table, int32_t arena_off, int32_t ins_counter_of
 	//max_ic_offset = ins_counter_off + sizeof(uint64_t);
 	rdcache_offset = rdcache_off;
 }
+#endif
 
 typedef struct {
 	uint64_t ic;
