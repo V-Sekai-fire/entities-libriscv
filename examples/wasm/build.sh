@@ -1,12 +1,9 @@
 #!/bin/bash
-
-export CXX=em++
-export CC=emcc
+set -e
 
 mkdir -p .build
 pushd .build
-cmake -DCMAKE_BUILD_TYPE=Release \
-	  -DCMAKE_TOOLCHAIN_FILE=../cmake/wasm.cmake \
+emcmake cmake -DCMAKE_BUILD_TYPE=Release \
 	  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
 	  -DRISCV_32I=OFF \
 	  -DRISCV_64I=ON \
