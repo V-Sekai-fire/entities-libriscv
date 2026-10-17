@@ -6,6 +6,7 @@
 #include "util/auxvec.hpp"
 #include <algorithm>
 #include <errno.h> // Used by emulated POSIX system calls
+#include "linux_errno.hpp"
 #include <random>
 #ifdef __GNUG__ /* Workaround for GCC bug */
 #include "machine_defaults.cpp"
@@ -89,7 +90,7 @@ namespace riscv
 		if (result >= 0)
 			set_result(result);
 		else
-			set_result(-errno);
+			set_result(-linux_errno(errno));
 	}
 
 	template <int W>
