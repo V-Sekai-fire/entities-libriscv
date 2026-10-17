@@ -24,6 +24,9 @@ static constexpr bool verbose_syscalls = false;
 #include <winsock2.h>
 #include <sys/stat.h>
 
+#include "../linux_errno.hpp"
+using riscv::linux_errno;
+
 #define SA_ONSTACK	0x08000000
 
 namespace riscv {
@@ -45,7 +48,7 @@ static void syscall_stub_zero(Machine<W> &machine) {
 template<int W>
 static void syscall_stub_nosys(Machine<W> &machine) {
 	SYSPRINT("SYSCALL stubbed (nosys): %d\n", (int) machine.cpu.reg(17));
-	machine.set_result(-ENOSYS);
+	machine.set_result(-linux_errno(ENOSYS));
 }
 
 template<int W>
@@ -136,7 +139,7 @@ void syscall_lseek(Machine<W> &machine) {
 		if (res >= 0) {
 			machine.set_result(res);
 		} else {
-			machine.set_result(-errno);
+			machine.set_result(-linux_errno(errno));
 		}
 	}
 }
@@ -306,7 +309,7 @@ static void syscall_openat(Machine<W> &machine) {
 			machine.set_result(vfd);
 		} else {
 			// Translate errno() into kernel API return value
-			machine.set_result(-errno);
+			machine.set_result(-linux_errno(errno));
 		}*/
 		(void)dir_fd;
 		(void)flags;
@@ -459,10 +462,10 @@ void syscall_readlinkat(Machine<W> &machine) {
 		(void)real_fd;
 		(void)g_buf;
 		(void)bufsize;
-		machine.set_result(-ENOSYS);
+		machine.set_result(-linux_errno(ENOSYS));
 		return;
 	}
-	machine.set_result(-ENOSYS);
+	machine.set_result(-linux_errno(ENOSYS));
 }
 
 // The RISC-V stat structure is different from x86
@@ -560,10 +563,10 @@ static void syscall_fstatat(Machine<W> &machine) {
 		(void)real_fd;
 		(void)g_buf;
 		(void)flags;
-		machine.set_result(-ENOSYS);
+		machine.set_result(-linux_errno(ENOSYS));
 		return;
 	}
-	machine.set_result(-ENOSYS);
+	machine.set_result(-linux_errno(ENOSYS));
 }
 
 template<int W>
@@ -589,7 +592,7 @@ static void syscall_fstat(Machine<W> &machine) {
 		machine.set_result_or_error(res);
 		return;
 	}
-	machine.set_result(-ENOSYS);
+	machine.set_result(-linux_errno(ENOSYS));
 }
 
 template<int W>
@@ -625,10 +628,10 @@ static void syscall_statx(Machine<W> &machine) {
 		(void)flags;
 		(void)mask;
 		(void)buffer;
-		machine.set_result(-ENOSYS);
+		machine.set_result(-linux_errno(ENOSYS));
 		return;
 	}
-	machine.set_result(-ENOSYS);
+	machine.set_result(-linux_errno(ENOSYS));
 }
 
 template<int W>
@@ -650,28 +653,57 @@ static void syscall_gettimeofday(Machine<W> &machine) {
 	machine.set_result_or_error(0);
 }
 
+// The guest sees one CPU, as on the Linux and macOS hosts. Without an answer
+// Rust's std probes /proc and /sys for a CPU count, starts worker threads, and
+// a guest whose glibc then fails to register a thread's rseq area aborts.
+template <int W>
+static void syscall_sched_getaffinity(Machine<W>& machine) {
+	const auto cpusetsize = machine.sysarg(1);
+	const auto g_mask     = machine.sysarg(2);
+	if (cpusetsize < sizeof(uint64_t) || g_mask == 0x0) {
+		machine.set_result(-EINVAL);
+	} else {
+		const uint64_t mask = 0x1;
+		machine.copy_to_guest(g_mask, &mask, sizeof(mask));
+		machine.set_result(sizeof(mask));
+	}
+	SYSPRINT("SYSCALL sched_getaffinity(size=%zu, mask=0x%lX) = %ld\n",
+		(size_t)cpusetsize, (long)g_mask, (long)machine.return_value());
+}
+
+// The guest's timespec is {time_t, long} for its own word size: two 32-bit
+// fields on RV32, two 64-bit fields on RV64. Windows is LLP64, so the host's
+// timespec has a 32-bit tv_nsec plus padding; copying it as it is would hand
+// an RV64 guest the padding as the upper half of tv_nsec.
+template<int W>
+static void copy_guest_timespec(Machine<W>& machine, address_type<W> buffer, int64_t sec, int64_t nsec) {
+	if constexpr (W == 4) {
+		const int32_t ts32[2] = {int32_t(sec), int32_t(nsec)};
+		machine.copy_to_guest(buffer, ts32, sizeof(ts32));
+	} else {
+		const int64_t ts64[2] = {sec, nsec};
+		machine.copy_to_guest(buffer, ts64, sizeof(ts64));
+	}
+}
+
+static void get_guest_time(int64_t& sec, int64_t& nsec) {
+	const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+		std::chrono::system_clock::now().time_since_epoch()).count();
+	sec = ns / 1000000000;
+	nsec = ns % 1000000000;
+}
+
 template<int W>
 static void syscall_clock_gettime(Machine<W>& machine) {
 	const auto clkid = machine.template sysarg<int>(0);
 	const auto buffer = machine.sysarg(1);
 	SYSPRINT("SYSCALL clock_gettime, clkid: %x buffer: 0x%lX\n",
 			 clkid, (long) buffer);
-
-	auto tp = std::chrono::system_clock::now();
-	auto secs = std::chrono::time_point_cast<std::chrono::seconds>(tp);
-	auto ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(tp) -
-		time_point_cast<std::chrono::nanoseconds>(secs);
-	struct timespec ts =
-		timespec{ secs.time_since_epoch().count(), long(ns.count()) };
 	(void)clkid;
 
-	if constexpr (W == 4) {
-		int32_t ts32[2] = {(int) ts.tv_sec, (int) ts.tv_nsec};
-		machine.copy_to_guest(buffer, &ts32, sizeof(ts32));
-	} else {
-		machine.copy_to_guest(buffer, &ts, sizeof(ts));
-	}
-
+	int64_t sec, nsec;
+	get_guest_time(sec, nsec);
+	copy_guest_timespec(machine, buffer, sec, nsec);
 	machine.set_result_or_error(0);
 }
 template<int W>
@@ -680,16 +712,13 @@ static void syscall_clock_gettime64(Machine<W>& machine) {
 	const auto buffer = machine.sysarg(1);
 	SYSPRINT("SYSCALL clock_gettime64, clkid: %x buffer: 0x%lX\n",
 			 clkid, (long) buffer);
-
-	auto tp = std::chrono::system_clock::now();
-	auto secs = std::chrono::time_point_cast<std::chrono::seconds>(tp);
-	auto ms = std::chrono::time_point_cast<std::chrono::milliseconds>(tp) -
-		time_point_cast<std::chrono::milliseconds>(secs);
-	struct timespec ts =
-		timespec{ secs.time_since_epoch().count(), long(ms.count()) };
 	(void)clkid;
 
-	machine.copy_to_guest(buffer, &ts, sizeof(ts));
+	// clock_gettime64 always takes a 64-bit timespec, whatever the word size.
+	int64_t sec, nsec;
+	get_guest_time(sec, nsec);
+	const int64_t ts64[2] = {sec, nsec};
+	machine.copy_to_guest(buffer, ts64, sizeof(ts64));
 	machine.set_result_or_error(0);
 }
 
@@ -773,9 +802,13 @@ static void syscall_brk(Machine<W> &machine) {
 	auto new_end = machine.sysarg(0);
 	if (new_end > machine.memory.heap_address() + Memory<W>::BRK_MAX) {
 		new_end = machine.memory.heap_address() + Memory<W>::BRK_MAX;
-	} else if (new_end < machine.memory.heap_address()) {
-		new_end = machine.memory.heap_address();
 	}
+	// Remember the break, as the Linux host does. brk(0) must report the
+	// current break: static glibc puts the TLS block at the first break,
+	// and a heap started below it would hand out the TLS memory.
+	if (new_end >= machine.memory.heap_address())
+		machine.memory.set_brk_address(new_end);
+	new_end = machine.memory.brk_address();
 
 	if constexpr (verbose_syscalls) {
 		printf("SYSCALL brk, new_end: 0x%lX\n", (long) new_end);
@@ -901,7 +934,7 @@ void Machine<W>::setup_linux_syscalls(bool filesystem, bool sockets) {
 	// clock_getres
 	install_syscall_handler(114, syscall_stub_nosys<W>);
 	// sched_getaffinity
-	install_syscall_handler(123, syscall_stub_nosys<W>);
+	install_syscall_handler(123, syscall_sched_getaffinity<W>);
 	// sigaltstack
 	install_syscall_handler(132, syscall_sigaltstack<W>);
 	// rt_sigaction
