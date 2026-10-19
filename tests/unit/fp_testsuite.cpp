@@ -98,6 +98,48 @@ TEST_CASE("Trunc and floor", "[Verification]")
 	REQUIRE(machine.return_value<float>() == -4.0f);
 }
 
+TEST_CASE("FNMSUB gives +0.0 when the product equals the addend", "[Verification]")
+{
+	// FNMSUB = -(rs1*rs2) + rs3. With rs1*rs2 == rs3 the exact sum is zero,
+	// and round-to-nearest gives +0.0. The binary translator once emitted
+	// -fma(rs1, rs2, -rs3), which is -0.0 there, while the interpreter and
+	// asmjit compute fma(-rs1, rs2, rs3). The values compare equal, so the
+	// checks read the bits.
+	const auto binary = build_and_load(R"M(
+	#include <stdint.h>
+	#include <string.h>
+	uint32_t fnmsub32(float a, float b, float c) {
+		float r;
+		__asm__ volatile("fnmsub.s %0, %1, %2, %3" : "=f"(r) : "f"(a), "f"(b), "f"(c));
+		uint32_t u; memcpy(&u, &r, 4); return u;
+	}
+	uint64_t fnmsub64(double a, double b, double c) {
+		double r;
+		__asm__ volatile("fnmsub.d %0, %1, %2, %3" : "=f"(r) : "f"(a), "f"(b), "f"(c));
+		uint64_t u; memcpy(&u, &r, 8); return u;
+	}
+	int main() {
+	})M");
+
+	riscv::Machine<RISCV64> machine { binary, { .memory_max = MAX_MEMORY } };
+	machine.setup_linux_syscalls();
+	machine.setup_linux(
+		{"fnmsub"},
+		{"LC_TYPE=C", "LC_ALL=C", "USER=root"});
+	machine.simulate(MAX_INSTRUCTIONS);
+	REQUIRE(machine.return_value() == 0);
+
+	machine.vmcall("fnmsub32", 2.0f, 3.0f, 6.0f);
+	REQUIRE(machine.return_value<uint32_t>() == 0x00000000u);
+	machine.vmcall("fnmsub64", 2.0, 3.0, 6.0);
+	REQUIRE(machine.return_value<uint64_t>() == 0x0000000000000000ull);
+	// Control: a nonzero result keeps its sign, -(2*3) + 5 = -1.
+	machine.vmcall("fnmsub32", 2.0f, 3.0f, 5.0f);
+	REQUIRE(machine.return_value<uint32_t>() == 0xBF800000u);
+	machine.vmcall("fnmsub64", 2.0, 3.0, 5.0);
+	REQUIRE(machine.return_value<uint64_t>() == 0xBFF0000000000000ull);
+}
+
 TEST_CASE("FCVT float-to-integer rounding modes", "[Verification]")
 {
 	// Directly emit FCVT with each static rounding mode (rtz/rdn/rup/rmm/rne)

@@ -3002,18 +3002,23 @@ void Emitter<W>::emit()
 		case RV32F_FNMADD:
 		case RV32F_FNMSUB: {
 			// FMA: single rounding via std::fma; TCC would otherwise split into two roundings.
-			//   FMADD  =  rs1*rs2 + rs3 →  fma(rs1, rs2,  rs3)
-			//   FMSUB  =  rs1*rs2 - rs3 →  fma(rs1, rs2, -rs3)
-			//   FNMADD = -rs1*rs2 - rs3 → -fma(rs1, rs2,  rs3)
-			//   FNMSUB = -rs1*rs2 + rs3 → -fma(rs1, rs2, -rs3)
+			// The same forms as the interpreter (rvf_instr.cpp) and asmjit (aj_emit.cpp), so all
+			// three agree on the sign of an exact zero:
+			//   FMADD  =  rs1*rs2 + rs3 →  fma( rs1, rs2,  rs3)
+			//   FMSUB  =  rs1*rs2 - rs3 →  fma( rs1, rs2, -rs3)
+			//   FNMADD = -rs1*rs2 - rs3 → -fma( rs1, rs2,  rs3)
+			//   FNMSUB = -rs1*rs2 + rs3 →  fma(-rs1, rs2,  rs3)
+			// (-fma(rs1, rs2, -rs3) for FNMSUB gave -0.0 where the interpreter gives +0.0.)
 			const rv32f_instruction fi{instr};
 			const auto dst = from_fpreg(fi.R4type.rd);
 			const auto rs1 = from_fpreg(fi.R4type.rs1);
 			const auto rs2 = from_fpreg(fi.R4type.rs2);
 			const auto rs3 = from_fpreg(fi.R4type.rs3);
-			const bool negateResult = (instr.opcode() == RV32F_FNMADD || instr.opcode() == RV32F_FNMSUB);
-			const bool subtractC    = (instr.opcode() == RV32F_FMSUB  || instr.opcode() == RV32F_FNMSUB);
+			const bool negateResult = (instr.opcode() == RV32F_FNMADD);
+			const bool negateA      = (instr.opcode() == RV32F_FNMSUB);
+			const bool subtractC    = (instr.opcode() == RV32F_FMSUB);
 			const std::string resultSign = negateResult ? "-" : "";
+			const std::string aSign      = negateA      ? "-" : "";
 			const std::string cSign      = subtractC    ? "-" : "";
 			if (fi.R4type.funct2 == 0x0) { // float32
 				if constexpr (nanboxing && W == 8) {
@@ -3022,10 +3027,10 @@ void Emitter<W>::emit()
 					code += "load_fl(&" + dst + ", 0x7FC00000u);\nelse ";
 				}
 				code += "set_fl(&" + dst + ", " + resultSign + "api.fmaf32("
-				      + rs1 + ".f32[0], " + rs2 + ".f32[0], " + cSign + rs3 + ".f32[0]));\n";
+				      + aSign + rs1 + ".f32[0], " + rs2 + ".f32[0], " + cSign + rs3 + ".f32[0]));\n";
 			} else if (fi.R4type.funct2 == 0x1) { // float64
 				code += "set_dbl(&" + dst + ", " + resultSign + "api.fmaf64("
-				      + rs1 + ".f64, " + rs2 + ".f64, " + cSign + rs3 + ".f64));\n";
+				      + aSign + rs1 + ".f64, " + rs2 + ".f64, " + cSign + rs3 + ".f64));\n";
 			} else {
 				UNKNOWN_INSTRUCTION();
 			}
